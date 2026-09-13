@@ -7,6 +7,7 @@ import uuid
 
 from .ppe_analyzer import analyze_ppe
 
+
 # ============================================================
 # FASTAPI APPLICATION
 # ============================================================
@@ -17,31 +18,22 @@ app = FastAPI(
     version="1.0.0"
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 
 # ============================================================
-# CORS
+# CORS CONFIGURATION
 # ============================================================
 
 app.add_middleware(
     CORSMiddleware,
-
     allow_origins=[
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+
+        # Your deployed frontend URL will be added here
+        # after we deploy the frontend.
     ],
-
     allow_credentials=True,
-
     allow_methods=["*"],
-
     allow_headers=["*"],
 )
 
@@ -61,7 +53,7 @@ UPLOAD_DIR.mkdir(
 
 
 # ============================================================
-# ROOT
+# ROOT ENDPOINT
 # ============================================================
 
 @app.get("/")
@@ -74,7 +66,7 @@ def root():
 
 
 # ============================================================
-# HEALTH
+# HEALTH CHECK
 # ============================================================
 
 @app.get("/health")
@@ -112,6 +104,7 @@ async def analyze_image(
             detail="Only JPG, JPEG, PNG and WEBP images are supported."
         )
 
+
     # --------------------------------------------------------
     # FILE EXTENSION
     # --------------------------------------------------------
@@ -123,6 +116,7 @@ async def analyze_image(
     if not extension:
         extension = ".jpg"
 
+
     # --------------------------------------------------------
     # UNIQUE FILE NAME
     # --------------------------------------------------------
@@ -131,10 +125,11 @@ async def analyze_image(
 
     image_path = UPLOAD_DIR / filename
 
+
     try:
 
         # ----------------------------------------------------
-        # SAVE IMAGE
+        # SAVE UPLOADED IMAGE
         # ----------------------------------------------------
 
         with open(image_path, "wb") as buffer:
@@ -146,26 +141,30 @@ async def analyze_image(
 
         print(f"Received image: {filename}")
 
+
         # ----------------------------------------------------
-        # RUN MODEL
+        # RUN PPE DETECTION
         # ----------------------------------------------------
 
         result = analyze_ppe(
             str(image_path)
         )
 
+
         print(
             f"Analysis complete: "
             f"{result['status']}"
         )
 
+
         # ----------------------------------------------------
-        # RETURN RESULT
+        # RETURN ANALYSIS RESULT
         # ----------------------------------------------------
 
         return JSONResponse(
             content=result
         )
+
 
     except Exception as e:
 
@@ -180,15 +179,17 @@ async def analyze_image(
             detail=f"PPE analysis failed: {str(e)}"
         )
 
+
     finally:
 
         # ----------------------------------------------------
-        # DELETE TEMP IMAGE
+        # DELETE TEMPORARY IMAGE
         # ----------------------------------------------------
 
         if image_path.exists():
 
             try:
                 image_path.unlink()
+
             except Exception:
                 pass
