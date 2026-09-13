@@ -85,53 +85,38 @@ def health():
 async def analyze_image(
     file: UploadFile = File(...)
 ):
-    print("========== ANALYZE REQUEST RECEIVED ==========")
+    print("========== ANALYZE START ==========")
 
-    extension = Path(file.filename or "").suffix.lower()
-
-    if not extension:
-        extension = ".jpg"
-
+    extension = Path(file.filename or "").suffix.lower() or ".jpg"
     filename = f"{uuid.uuid4()}{extension}"
     image_path = UPLOAD_DIR / filename
 
     try:
-        # Save image
         contents = await file.read()
 
         with open(image_path, "wb") as buffer:
             buffer.write(contents)
 
-        print(f"Image saved: {image_path}")
-        print(f"Image size: {len(contents)} bytes")
-
-        # Run YOLO
-        print("========== STARTING YOLO ==========")
+        print(f"Image saved: {len(contents)} bytes")
+        print("Calling analyze_ppe...")
 
         result = analyze_ppe(str(image_path))
 
-        print("========== YOLO COMPLETED ==========")
-        print(f"Result: {result}")
+        print("analyze_ppe returned successfully")
 
-        return JSONResponse(content=result)
+        return result
 
     except Exception as e:
-
-        print("========== PPE ANALYSIS ERROR ==========")
-        print(f"Error type: {type(e).__name__}")
-        print(f"Error: {str(e)}")
-        print("========================================")
+        print("========== ERROR ==========")
+        print(type(e).__name__)
+        print(str(e))
+        print("===========================")
 
         raise HTTPException(
             status_code=500,
-            detail=f"PPE analysis failed: {str(e)}"
+            detail=str(e)
         )
 
     finally:
-
         if image_path.exists():
-            try:
-                image_path.unlink()
-                print("Temporary image deleted.")
-            except Exception as cleanup_error:
-                print(f"Cleanup error: {cleanup_error}")
+            image_path.unlink()
