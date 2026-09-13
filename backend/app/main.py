@@ -1,214 +1,188 @@
-from io import BytesIO
-
-from fastapi import (
-    FastAPI,
-    File,
-    UploadFile,
-    HTTPException
-)
-
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from PIL import Image
+from pathlib import Path
+import shutil
+import uuid
 
-from .model_service import ppe_model
-from .reasoning import (
-    answer_query,
-    safety_analysis,
-    confidence_level
-)
+from .ppe_analyzer import analyze_ppe
 
 
-# =========================================================
-# APP
-# =========================================================
+# ============================================================
+# FASTAPI APPLICATION
+# ============================================================
 
 app = FastAPI(
-    title="Construction PPE Safety Intelligence API",
-    description=(
-        "RT-DETR based construction-site PPE detection "
-        "and rule-based safety reasoning API."
-    ),
+    title="PPE Detection API",
+    description="Construction Site PPE Compliance Detection API",
     version="1.0.0"
 )
 
 
-# =========================================================
+# ============================================================
 # CORS
-# =========================================================
+# ============================================================
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+
     allow_credentials=True,
+
     allow_methods=["*"],
+
     allow_headers=["*"],
 )
 
 
-# =========================================================
-# HEALTH CHECK
-# =========================================================
+# ============================================================
+# DIRECTORIES
+# ============================================================
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+UPLOAD_DIR = BASE_DIR / "uploads"
+
+UPLOAD_DIR.mkdir(
+    parents=True,
+    exist_ok=True
+)
+
+
+# ============================================================
+# ROOT
+# ============================================================
 
 @app.get("/")
 def root():
 
     return {
-        "status": "running",
-        "service": "Construction PPE Safety Intelligence API",
-        "model": "RT-DETR"
+        "message": "PPE Detection API is running",
+        "status": "online"
     }
 
+
+# ============================================================
+# HEALTH
+# ============================================================
 
 @app.get("/health")
 def health():
 
     return {
-        "status": "healthy",
-        "model_loaded": True
+        "status": "healthy"
     }
 
 
-# =========================================================
-# IMAGE LOADING
-# =========================================================
+# ============================================================
+# ANALYZE IMAGE
+# ============================================================
 
-async def load_image(
-    file: UploadFile
+@app.post("/analyze")
+async def analyze_image(
+    file: UploadFile = File(...)
 ):
 
-    if not file.content_type:
+    # --------------------------------------------------------
+    # ALLOWED FILE TYPES
+    # --------------------------------------------------------
+
+    allowed_types = {
+        "image/jpeg",
+        "image/png",
+        "image/jpg",
+        "image/webp"
+    }
+
+    if file.content_type not in allowed_types:
 
         raise HTTPException(
             status_code=400,
-            detail="File type could not be determined."
+            detail="Only JPG, JPEG, PNG and WEBP images are supported."
         )
 
-    if not file.content_type.startswith("image/"):
+    # --------------------------------------------------------
+    # FILE EXTENSION
+    # --------------------------------------------------------
 
-        raise HTTPException(
-            status_code=400,
-            detail="Only image files are supported."
-        )
+    extension = Path(
+        file.filename or ""
+    ).suffix.lower()
 
-    contents = await file.read()
+    if not extension:
+        extension = ".jpg"
 
-    if not contents:
+    # --------------------------------------------------------
+    # UNIQUE FILE NAME
+    # --------------------------------------------------------
 
-        raise HTTPException(
-            status_code=400,
-            detail="Uploaded file is empty."
-        )
+    filename = f"{uuid.uuid4()}{extension}"
+
+    image_path = UPLOAD_DIR / filename
 
     try:
 
-        image = Image.open(
-            BytesIO(contents)
-        ).convert("RGB")
+        # ----------------------------------------------------
+        # SAVE IMAGE
+        # ----------------------------------------------------
 
-        return image
+        with open(image_path, "wb") as buffer:
 
-    except Exception:
+            shutil.copyfileobj(
+                file.file,
+                buffer
+            )
 
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid image file."
+        print(f"Received image: {filename}")
+
+        # ----------------------------------------------------
+        # RUN MODEL
+        # ----------------------------------------------------
+
+        result = analyze_ppe(
+            str(image_path)
         )
 
+        print(
+            f"Analysis complete: "
+            f"{result['status']}"
+        )
 
-# =========================================================
-# DETECT
-# =========================================================
+        # ----------------------------------------------------
+        # RETURN RESULT
+        # ----------------------------------------------------
 
-@app.post("/detect")
-async def detect(
-    file: UploadFile = File(...)
-):
+        return JSONResponse(
+            content=result
+        )
 
-    image = await load_image(file)
+    except Exception as e:
 
-    detections = ppe_model.predict(image)
+        print("=" * 60)
+        print("PPE ANALYSIS ERROR")
+        print("=" * 60)
+        print(str(e))
+        print("=" * 60)
 
-    return {
-        "success": True,
-        "model": "RT-DETR",
-        "image_width": image.width,
-        "image_height": image.height,
-        "detection_count": len(detections),
-        "detections": [
-            detection.model_dump()
-            for detection in detections
-        ]
-    }
+        raise HTTPException(
+            status_code=500,
+            detail=f"PPE analysis failed: {str(e)}"
+        )
 
+    finally:
 
-# =========================================================
-# REASON
-# =========================================================
+        # ----------------------------------------------------
+        # DELETE TEMP IMAGE
+        # ----------------------------------------------------
 
-@app.post("/reason")
-async def reason(
-    query: str,
-    file: UploadFile = File(...)
-):
+        if image_path.exists():
 
-    image = await load_image(file)
-
-    detections = ppe_model.predict(image)
-
-    intent, answer, safety_status = answer_query(
-        query,
-        detections
-    )
-
-    analysis = safety_analysis(
-        detections
-    )
-
-    confidence = confidence_level(
-        detections
-    )
-
-    return {
-        "success": True,
-        "query": query,
-        "intent": intent,
-        "answer": answer,
-        "safety_status": safety_status,
-        "confidence": confidence,
-        "evidence": analysis,
-        "detections": [
-            detection.model_dump()
-            for detection in detections
-        ]
-    }
-
-
-# =========================================================
-# SAFETY REPORT
-# =========================================================
-
-@app.post("/safety-report")
-async def safety_report(
-    file: UploadFile = File(...)
-):
-
-    image = await load_image(file)
-
-    detections = ppe_model.predict(image)
-
-    analysis = safety_analysis(
-        detections
-    )
-
-    confidence = confidence_level(
-        detections
-    )
-
-    return {
-        "success": True,
-        "safety_status": analysis["status"],
-        "confidence": confidence,
-        "evidence": analysis,
-        "detection_count": len(detections)
-    }
+            try:
+                image_path.unlink()
+            except Exception:
+                pass

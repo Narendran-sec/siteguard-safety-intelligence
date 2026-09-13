@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+backend/venv/
+
+# Environment variables
+.env
+backend/.env
+
+# Runtime files
+backend/uploads/
+backend/runs/
+runs/
+*.log
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# Testing / cache
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local test images
+backend/test image*.jpg
