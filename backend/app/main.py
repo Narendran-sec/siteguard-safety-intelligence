@@ -85,111 +85,29 @@ def health():
 async def analyze_image(
     file: UploadFile = File(...)
 ):
-
-    # --------------------------------------------------------
-    # ALLOWED FILE TYPES
-    # --------------------------------------------------------
-
-    allowed_types = {
-        "image/jpeg",
-        "image/png",
-        "image/jpg",
-        "image/webp"
-    }
-
-    if file.content_type not in allowed_types:
-
-        raise HTTPException(
-            status_code=400,
-            detail="Only JPG, JPEG, PNG and WEBP images are supported."
-        )
-
-
-    # --------------------------------------------------------
-    # FILE EXTENSION
-    # --------------------------------------------------------
-
-    extension = Path(
-        file.filename or ""
-    ).suffix.lower()
-
-    if not extension:
-        extension = ".jpg"
-
-
-    # --------------------------------------------------------
-    # UNIQUE FILE NAME
-    # --------------------------------------------------------
-
-    filename = f"{uuid.uuid4()}{extension}"
-
-    image_path = UPLOAD_DIR / filename
-
+    print("========== ANALYZE REQUEST RECEIVED ==========")
+    print(f"Filename: {file.filename}")
+    print(f"Content type: {file.content_type}")
 
     try:
+        contents = await file.read()
 
-        # ----------------------------------------------------
-        # SAVE UPLOADED IMAGE
-        # ----------------------------------------------------
+        print(f"File received successfully")
+        print(f"File size: {len(contents)} bytes")
 
-        with open(image_path, "wb") as buffer:
-
-            shutil.copyfileobj(
-                file.file,
-                buffer
-            )
-
-        print(f"Received image: {filename}")
-
-
-        # ----------------------------------------------------
-        # RUN PPE DETECTION
-        # ----------------------------------------------------
-
-        result = analyze_ppe(
-            str(image_path)
-        )
-
-
-        print(
-            f"Analysis complete: "
-            f"{result['status']}"
-        )
-
-
-        # ----------------------------------------------------
-        # RETURN ANALYSIS RESULT
-        # ----------------------------------------------------
-
-        return JSONResponse(
-            content=result
-        )
-
+        return {
+            "status": "upload_received",
+            "filename": file.filename,
+            "content_type": file.content_type,
+            "size": len(contents)
+        }
 
     except Exception as e:
-
-        print("=" * 60)
-        print("PPE ANALYSIS ERROR")
-        print("=" * 60)
+        print("========== UPLOAD ERROR ==========")
         print(str(e))
-        print("=" * 60)
+        print("===================================")
 
         raise HTTPException(
             status_code=500,
-            detail=f"PPE analysis failed: {str(e)}"
+            detail=str(e)
         )
-
-
-    finally:
-
-        # ----------------------------------------------------
-        # DELETE TEMPORARY IMAGE
-        # ----------------------------------------------------
-
-        if image_path.exists():
-
-            try:
-                image_path.unlink()
-
-            except Exception:
-                pass
