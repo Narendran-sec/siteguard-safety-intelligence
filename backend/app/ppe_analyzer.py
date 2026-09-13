@@ -1,7 +1,8 @@
 from pathlib import Path
 
-import torch
-from ultralytics import YOLO
+import cv2
+import numpy as np
+import onnxruntime as ort
 
 
 # ============================================================
@@ -10,26 +11,35 @@ from ultralytics import YOLO
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-MODEL_PATH = BASE_DIR / "models" / "v2best.pt"
+MODEL_PATH = BASE_DIR / "models" / "v2best.onnx"
 
+IMAGE_SIZE = 320
 CONFIDENCE_THRESHOLD = 0.30
 DECISION_MARGIN = 0.10
-
-# Render-friendly inference settings
-IMAGE_SIZE = 320
 MAX_DETECTIONS = 50
 
 
 # ============================================================
-# CPU CONFIGURATION
+# CLASS NAMES
 # ============================================================
 
-# Keep CPU usage predictable on small cloud instances.
-torch.set_num_threads(1)
+CLASS_NAMES = {
+    0: "helmet",
+    1: "gloves",
+    2: "vest",
+    3: "boots",
+    4: "goggles",
+    5: "none",
+    6: "Person",
+    7: "no_helmet",
+    8: "no_goggle",
+    9: "no_gloves",
+    10: "no_boots",
+}
 
 
 # ============================================================
-# V2 MODEL PPE CLASSES
+# PPE PAIRS
 # ============================================================
 
 PPE_PAIRS = {
@@ -42,31 +52,96 @@ PPE_PAIRS = {
 
 
 # ============================================================
-# LOAD MODEL
+# LOAD ONNX MODEL
 # ============================================================
 
 print("========================================")
-print("Loading V2 PPE model...")
+print("Loading RT-DETR ONNX model...")
 print(f"Model path: {MODEL_PATH}")
 print("========================================")
 
 if not MODEL_PATH.exists():
     raise FileNotFoundError(
-        f"Model not found at: {MODEL_PATH}"
+        f"ONNX model not found at: {MODEL_PATH}"
     )
 
-model = YOLO(str(MODEL_PATH))
 
-print("V2 model loaded successfully.")
-print("Classes:")
+# Keep ONNX Runtime memory usage controlled.
+session_options = ort.SessionOptions()
 
-for class_id, class_name in model.names.items():
-    print(f"{class_id} -> {class_name}")
+session_options.intra_op_num_threads = 1
+session_options.inter_op_num_threads = 1
 
+session_options.graph_optimization_level = (
+    ort.GraphOptimizationLevel.ORT_ENABLE_BASIC
+)
+
+
+session = ort.InferenceSession(
+    str(MODEL_PATH),
+    sess_options=session_options,
+    providers=["CPUExecutionProvider"]
+)
+
+
+INPUT_NAME = session.get_inputs()[0].name
+OUTPUT_NAME = session.get_outputs()[0].name
+
+
+print("RT-DETR ONNX model loaded successfully.")
+print(f"Input name: {INPUT_NAME}")
+print(f"Input shape: {session.get_inputs()[0].shape}")
+print(f"Output name: {OUTPUT_NAME}")
+print(f"Output shape: {session.get_outputs()[0].shape}")
 print("Inference device: CPU")
-print(f"Inference image size: {IMAGE_SIZE}")
+print(f"Image size: {IMAGE_SIZE}")
 print(f"Confidence threshold: {CONFIDENCE_THRESHOLD}")
 print("========================================")
+
+
+# ============================================================
+# IMAGE PREPROCESSING
+# ============================================================
+
+def preprocess_image(image_path: Path):
+
+    image = cv2.imread(str(image_path))
+
+    if image is None:
+        raise ValueError(
+            f"Could not read image: {image_path}"
+        )
+
+    # OpenCV loads BGR.
+    # Model expects RGB.
+    image = cv2.cvtColor(
+        image,
+        cv2.COLOR_BGR2RGB
+    )
+
+    image = cv2.resize(
+        image,
+        (IMAGE_SIZE, IMAGE_SIZE),
+        interpolation=cv2.INTER_LINEAR
+    )
+
+    image = image.astype(
+        np.float32
+    ) / 255.0
+
+    # HWC -> CHW
+    image = np.transpose(
+        image,
+        (2, 0, 1)
+    )
+
+    # Add batch dimension
+    image = np.expand_dims(
+        image,
+        axis=0
+    )
+
+    return np.ascontiguousarray(image)
 
 
 # ============================================================
@@ -84,30 +159,34 @@ def analyze_ppe(image_path):
 
     print("----------------------------------------")
     print(f"Starting PPE analysis: {image_path.name}")
-    print("Starting YOLO inference...")
+    print("Starting RT-DETR ONNX inference...")
     print("----------------------------------------")
 
     # ========================================================
-    # RUN INFERENCE
+    # PREPROCESS
     # ========================================================
 
-    results = model.predict(
-        source=str(image_path),
-
-        # Render-friendly settings
-        imgsz=IMAGE_SIZE,
-        device="cpu",
-        workers=0,
-
-        # Detection settings
-        conf=CONFIDENCE_THRESHOLD,
-        max_det=MAX_DETECTIONS,
-
-        # Keep output quiet
-        verbose=False
+    input_tensor = preprocess_image(
+        image_path
     )
 
-    print("YOLO inference completed successfully.")
+    # ========================================================
+    # INFERENCE
+    # ========================================================
+
+    outputs = session.run(
+        [OUTPUT_NAME],
+        {
+            INPUT_NAME: input_tensor
+        }
+    )
+
+    detections = outputs[0][0]
+
+    print(
+        f"RT-DETR inference completed. "
+        f"Raw detections: {len(detections)}"
+    )
 
     # ========================================================
     # SCORE STORAGE
@@ -126,55 +205,78 @@ def analyze_ppe(image_path):
     person_detected = False
 
     # ========================================================
-    # COLLECT DETECTIONS
+    # PROCESS DETECTIONS
     # ========================================================
 
-    for result in results:
+    detection_count = 0
 
-        if result.boxes is None:
+    for detection in detections:
+
+        if len(detection) != 6:
             continue
 
-        for box in result.boxes:
+        confidence = float(
+            detection[4]
+        )
 
-            class_id = int(box.cls[0])
-            confidence = float(box.conf[0])
+        class_id = int(
+            detection[5]
+        )
 
-            class_name = model.names[class_id]
+        if confidence < CONFIDENCE_THRESHOLD:
+            continue
 
-            print(
-                f"Detection: {class_name} "
-                f"(confidence={confidence:.3f})"
-            )
+        class_name = CLASS_NAMES.get(
+            class_id
+        )
 
-            # ------------------------------------------------
-            # PERSON
-            # ------------------------------------------------
+        if class_name is None:
+            continue
 
-            if class_name == "Person":
-                person_detected = True
+        detection_count += 1
 
-            # ------------------------------------------------
-            # PPE
-            # ------------------------------------------------
+        print(
+            f"Detection: {class_name} "
+            f"(confidence={confidence:.3f})"
+        )
 
-            for ppe, (positive_class, negative_class) in PPE_PAIRS.items():
+        # ----------------------------------------------------
+        # PERSON
+        # ----------------------------------------------------
 
-                if class_name == positive_class:
+        if class_name == "Person":
 
-                    positive_scores[ppe] = max(
-                        positive_scores[ppe],
-                        confidence
-                    )
+            person_detected = True
 
-                elif (
-                    negative_class is not None
-                    and class_name == negative_class
-                ):
+        # ----------------------------------------------------
+        # PPE
+        # ----------------------------------------------------
 
-                    negative_scores[ppe] = max(
-                        negative_scores[ppe],
-                        confidence
-                    )
+        for ppe, (
+            positive_class,
+            negative_class
+        ) in PPE_PAIRS.items():
+
+            if class_name == positive_class:
+
+                positive_scores[ppe] = max(
+                    positive_scores[ppe],
+                    confidence
+                )
+
+            elif (
+                negative_class is not None
+                and class_name == negative_class
+            ):
+
+                negative_scores[ppe] = max(
+                    negative_scores[ppe],
+                    confidence
+                )
+
+    print(
+        f"Usable detections: {detection_count}"
+    )
 
     # ========================================================
     # DETERMINE PPE STATUS
@@ -188,7 +290,7 @@ def analyze_ppe(image_path):
         negative = negative_scores[ppe]
 
         # ----------------------------------------------------
-        # POSITIVE DETECTION
+        # Positive detection
         # ----------------------------------------------------
 
         if positive >= CONFIDENCE_THRESHOLD:
@@ -202,7 +304,7 @@ def analyze_ppe(image_path):
                 status = "present"
 
         # ----------------------------------------------------
-        # NEGATIVE DETECTION
+        # Negative detection
         # ----------------------------------------------------
 
         elif negative >= CONFIDENCE_THRESHOLD:
@@ -210,7 +312,7 @@ def analyze_ppe(image_path):
             status = "missing"
 
         # ----------------------------------------------------
-        # NO RELIABLE EVIDENCE
+        # No reliable evidence
         # ----------------------------------------------------
 
         else:
@@ -219,8 +321,14 @@ def analyze_ppe(image_path):
 
         ppe_results[ppe] = {
             "status": status,
-            "positive_confidence": round(positive, 3),
-            "negative_confidence": round(negative, 3)
+            "positive_confidence": round(
+                positive,
+                3
+            ),
+            "negative_confidence": round(
+                negative,
+                3
+            )
         }
 
     # ========================================================
@@ -256,7 +364,9 @@ def analyze_ppe(image_path):
         overall_status = "compliant"
 
     print("----------------------------------------")
-    print(f"Analysis complete: {overall_status}")
+    print(
+        f"Analysis complete: {overall_status}"
+    )
     print("----------------------------------------")
 
     # ========================================================
