@@ -1,7 +1,8 @@
 import { useState } from "react";
 import "./App.css";
 
-const API_URL = "http://127.0.0.1:8000";
+const API_URL =
+  import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
 const PPE_ITEMS = [
   { key: "helmet", label: "Helmet", icon: "⛑" },
@@ -144,7 +145,7 @@ function App() {
         <div className="brand">
 
           <div className="brand-mark">
-            <span>⬡</span>
+            <img src="/logo.png" alt="SiteGuard AI" />
           </div>
 
           <div className="brand-text">

@@ -1,13 +1,11 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-
+from fastapi.responses import JSONResponse
 from pathlib import Path
 import shutil
 import uuid
 
 from .ppe_analyzer import analyze_ppe
-
 
 # ============================================================
 # FASTAPI APPLICATION
@@ -17,6 +15,14 @@ app = FastAPI(
     title="PPE Detection API",
     description="Construction Site PPE Compliance Detection API",
     version="1.0.0"
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
