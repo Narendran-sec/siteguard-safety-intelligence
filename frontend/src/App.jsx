@@ -18,6 +18,10 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  // ============================================================
+  // FILE SELECTION
+  // ============================================================
+
   const handleFileChange = (event) => {
     const file = event.target.files?.[0];
 
@@ -32,9 +36,18 @@ function App() {
     setResult(null);
     setError("");
 
+    // Release previous preview URL if present
+    if (preview) {
+      URL.revokeObjectURL(preview);
+    }
+
     const imageUrl = URL.createObjectURL(file);
     setPreview(imageUrl);
   };
+
+  // ============================================================
+  // ANALYZE IMAGE
+  // ============================================================
 
   const analyzeImage = async () => {
     if (!selectedFile) {
@@ -48,6 +61,7 @@ function App() {
 
     try {
       const formData = new FormData();
+
       formData.append("file", selectedFile);
 
       const response = await fetch(`${API_URL}/analyze`, {
@@ -55,18 +69,28 @@ function App() {
         body: formData,
       });
 
-      const data = await response.json();
+      let data;
+
+      try {
+        data = await response.json();
+      } catch {
+        throw new Error(
+          "The detection server returned an invalid response."
+        );
+      }
 
       if (!response.ok) {
-        throw new Error(data.detail || "PPE analysis failed.");
+        throw new Error(
+          data?.detail || "PPE analysis failed."
+        );
       }
 
       setResult(data);
     } catch (err) {
-      console.error(err);
+      console.error("PPE analysis error:", err);
 
       setError(
-        err.message ||
+        err?.message ||
           "Unable to connect to the PPE detection server."
       );
     } finally {
@@ -74,23 +98,39 @@ function App() {
     }
   };
 
+  // ============================================================
+  // RESET
+  // ============================================================
+
   const reset = () => {
+    if (preview) {
+      URL.revokeObjectURL(preview);
+    }
+
     setSelectedFile(null);
     setPreview(null);
     setResult(null);
     setError("");
   };
 
+  // ============================================================
+  // STATUS HELPERS
+  // ============================================================
+
   const getStatusLabel = (status) => {
     switch (status) {
       case "compliant":
         return "COMPLIANT";
+
       case "violation":
         return "VIOLATION";
+
       case "uncertain":
         return "UNCERTAIN";
+
       case "no_person":
         return "NO PERSON";
+
       default:
         return status?.toUpperCase() || "UNKNOWN";
     }
@@ -100,20 +140,30 @@ function App() {
     switch (status) {
       case "compliant":
         return "compliant";
+
       case "violation":
         return "violation";
+
       case "uncertain":
         return "uncertain";
+
       case "no_person":
         return "no-person";
+
       default:
         return "";
     }
   };
 
   const getPPEClass = (status) => {
-    if (status === "present") return "present";
-    if (status === "missing") return "missing";
+    if (status === "present") {
+      return "present";
+    }
+
+    if (status === "missing") {
+      return "missing";
+    }
+
     return "ppe-uncertain";
   };
 
@@ -121,16 +171,35 @@ function App() {
     switch (status) {
       case "compliant":
         return "✓";
+
       case "violation":
         return "!";
+
       case "uncertain":
         return "?";
+
       case "no_person":
         return "∅";
+
       default:
         return "•";
     }
   };
+
+  // ============================================================
+  // FORMAT PPE NAME
+  // ============================================================
+
+  const formatPPEName = (item) => {
+    return (
+      item.charAt(0).toUpperCase() +
+      item.slice(1)
+    );
+  };
+
+  // ============================================================
+  // RENDER
+  // ============================================================
 
   return (
     <div className="app">
@@ -144,68 +213,115 @@ function App() {
         <div className="brand">
 
           <div className="brand-mark">
-            <img src="/logo.png" alt="SiteGuard AI" />
+            <img
+              src="/logo.png"
+              alt="SiteGuard AI"
+            />
           </div>
 
           <div className="brand-text">
-            <h1>SITEGUARD<span> AI</span></h1>
-            <p>PPE COMPLIANCE INTELLIGENCE</p>
+
+            <h1>
+              SITEGUARD
+              <span> AI</span>
+            </h1>
+
+            <p>
+              PPE COMPLIANCE INTELLIGENCE
+            </p>
+
           </div>
 
         </div>
 
         <div className="system-indicator">
+
           <span className="live-dot"></span>
+
           <div>
-            <strong>SYSTEM ONLINE</strong>
-            <small>V2 DETECTION ENGINE</small>
+
+            <strong>
+              SYSTEM ONLINE
+            </strong>
+
+            <small>
+              RT-DETR V2 DETECTION ENGINE
+            </small>
+
           </div>
+
         </div>
 
       </header>
 
 
       {/* =====================================================
-          MAIN
+          MAIN DASHBOARD
       ===================================================== */}
 
       <main className="dashboard">
 
-        {/* HEADER */}
+        {/* =================================================
+            DASHBOARD HEADER
+        ================================================= */}
 
         <section className="dashboard-header">
 
           <div>
+
             <div className="eyebrow">
+
               <span></span>
+
               AI-POWERED SAFETY MONITORING
+
             </div>
 
             <h2>
+
               Construction Site
               <br />
-              <span>PPE Compliance</span>
+
+              <span>
+                PPE Compliance
+              </span>
+
             </h2>
 
             <p>
               Upload a construction-site image and let the
-              detection engine identify PPE compliance,
+              RT-DETR detection engine identify PPE compliance,
               missing equipment and uncertain detections.
             </p>
+
           </div>
 
+
           <div className="model-card">
-            <span className="model-label">ACTIVE MODEL</span>
-            <strong>V2 BEST</strong>
-            <small>YOLO DETECTION ENGINE</small>
+
+            <span className="model-label">
+              ACTIVE MODEL
+            </span>
+
+            <strong>
+              V2 BEST RT-DETR
+            </strong>
+
+            <small>
+              ONNX DETECTION ENGINE
+            </small>
+
           </div>
 
         </section>
 
 
-        {/* WORKSPACE */}
+        {/* =================================================
+            WORKSPACE
+        ================================================= */}
 
         <section className="workspace">
+
 
           {/* =================================================
               UPLOAD PANEL
@@ -220,12 +336,23 @@ function App() {
               </div>
 
               <div>
-                <span>INPUT</span>
-                <h3>Site Image</h3>
+
+                <span>
+                  INPUT
+                </span>
+
+                <h3>
+                  Site Image
+                </h3>
+
               </div>
 
             </div>
 
+
+            {/* =================================================
+                UPLOAD ZONE
+            ================================================= */}
 
             <label
               className={`upload-zone ${
@@ -243,7 +370,11 @@ function App() {
                   />
 
                   <div className="preview-overlay">
-                    <span>IMAGE READY</span>
+
+                    <span>
+                      IMAGE READY
+                    </span>
+
                   </div>
 
                 </div>
@@ -265,9 +396,19 @@ function App() {
                   </p>
 
                   <div className="format-tags">
-                    <span>JPG</span>
-                    <span>PNG</span>
-                    <span>WEBP</span>
+
+                    <span>
+                      JPG
+                    </span>
+
+                    <span>
+                      PNG
+                    </span>
+
+                    <span>
+                      WEBP
+                    </span>
+
                   </div>
 
                 </div>
@@ -283,7 +424,9 @@ function App() {
             </label>
 
 
-            {/* FILE INFO */}
+            {/* =================================================
+                FILE INFORMATION
+            ================================================= */}
 
             {selectedFile && (
 
@@ -294,11 +437,22 @@ function App() {
                 </div>
 
                 <div className="file-details">
-                  <strong>{selectedFile.name}</strong>
+
+                  <strong>
+                    {selectedFile.name}
+                  </strong>
 
                   <span>
-                    {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+                    {
+                      (
+                        selectedFile.size /
+                        1024 /
+                        1024
+                      ).toFixed(2)
+                    }{" "}
+                    MB
                   </span>
+
                 </div>
 
                 <div className="file-ready">
@@ -310,7 +464,9 @@ function App() {
             )}
 
 
-            {/* BUTTONS */}
+            {/* =================================================
+                ACTION BUTTONS
+            ================================================= */}
 
             <div className="action-row">
 
@@ -321,15 +477,26 @@ function App() {
               >
 
                 {loading ? (
+
                   <>
                     <span className="button-spinner"></span>
+
                     ANALYZING
+
                   </>
+
                 ) : (
+
                   <>
+
                     RUN PPE ANALYSIS
-                    <span>→</span>
+
+                    <span>
+                      →
+                    </span>
+
                   </>
+
                 )}
 
               </button>
@@ -349,11 +516,20 @@ function App() {
             </div>
 
 
+            {/* =================================================
+                ERROR
+            ================================================= */}
+
             {error && (
 
               <div className="error-message">
-                <span>!</span>
+
+                <span>
+                  !
+                </span>
+
                 {error}
+
               </div>
 
             )}
@@ -374,25 +550,39 @@ function App() {
               </div>
 
               <div>
-                <span>OUTPUT</span>
-                <h3>AI Analysis</h3>
+
+                <span>
+                  OUTPUT
+                </span>
+
+                <h3>
+                  AI Analysis
+                </h3>
+
               </div>
 
             </div>
 
 
-            {/* EMPTY */}
+            {/* =================================================
+                EMPTY STATE
+            ================================================= */}
 
             {!result && !loading && (
 
               <div className="empty-state">
 
                 <div className="radar">
+
                   <div className="radar-line"></div>
+
                   <div className="radar-dot"></div>
+
                 </div>
 
-                <h4>AWAITING ANALYSIS</h4>
+                <h4>
+                  AWAITING ANALYSIS
+                </h4>
 
                 <p>
                   Upload a site image to begin
@@ -404,7 +594,9 @@ function App() {
             )}
 
 
-            {/* LOADING */}
+            {/* =================================================
+                LOADING STATE
+            ================================================= */}
 
             {loading && (
 
@@ -421,7 +613,9 @@ function App() {
                 </p>
 
                 <div className="processing-bar">
+
                   <div></div>
+
                 </div>
 
               </div>
@@ -429,13 +623,18 @@ function App() {
             )}
 
 
-            {/* RESULT */}
+            {/* =================================================
+                RESULT
+            ================================================= */}
 
             {result && (
 
               <div className="result-content">
 
-                {/* OVERALL STATUS */}
+
+                {/* =================================================
+                    OVERALL STATUS
+                ================================================= */}
 
                 <div
                   className={`overall-status ${getStatusClass(
@@ -444,8 +643,13 @@ function App() {
                 >
 
                   <div className="status-icon">
-                    {getOverallIcon(result.status)}
+
+                    {getOverallIcon(
+                      result.status
+                    )}
+
                   </div>
+
 
                   <div className="status-info">
 
@@ -454,47 +658,72 @@ function App() {
                     </span>
 
                     <h2>
-                      {getStatusLabel(result.status)}
+                      {getStatusLabel(
+                        result.status
+                      )}
                     </h2>
 
                   </div>
 
+
                   <div className="status-side">
-                    <small>PERSON DETECTED</small>
+
+                    <small>
+                      PERSON DETECTED
+                    </small>
 
                     <strong>
+
                       {result.person_detected
                         ? "YES"
                         : "NO"}
+
                     </strong>
+
                   </div>
 
                 </div>
 
 
-                {/* PPE HEADER */}
+                {/* =================================================
+                    PPE HEADER
+                ================================================= */}
 
                 <div className="section-title">
 
-                  <span>03</span>
+                  <span>
+                    03
+                  </span>
 
                   <div>
-                    <small>REQUIRED EQUIPMENT</small>
-                    <h4>PPE Detection Results</h4>
+
+                    <small>
+                      REQUIRED EQUIPMENT
+                    </small>
+
+                    <h4>
+                      PPE Detection Results
+                    </h4>
+
                   </div>
 
                 </div>
 
 
-                {/* PPE GRID */}
+                {/* =================================================
+                    PPE GRID
+                ================================================= */}
 
                 <div className="ppe-grid">
 
                   {PPE_ITEMS.map((item) => {
 
-                    const data = result.ppe?.[item.key];
+                    const data =
+                      result.ppe?.[item.key];
 
-                    if (!data) return null;
+                    if (!data) {
+                      return null;
+                    }
 
                     const confidence = Math.max(
                       data.positive_confidence || 0,
@@ -517,6 +746,7 @@ function App() {
                           </div>
 
                           <div className="ppe-name">
+
                             <strong>
                               {item.label}
                             </strong>
@@ -528,10 +758,15 @@ function App() {
                             >
                               {data.status.toUpperCase()}
                             </span>
+
                           </div>
 
                         </div>
 
+
+                        {/* =================================================
+                            CONFIDENCE
+                        ================================================= */}
 
                         <div className="confidence-row">
 
@@ -544,6 +779,7 @@ function App() {
                           </strong>
 
                         </div>
+
 
                         <div className="confidence-track">
 
@@ -570,7 +806,9 @@ function App() {
                 </div>
 
 
-                {/* ALERTS */}
+                {/* =================================================
+                    MISSING PPE ALERT
+                ================================================= */}
 
                 {result.missing?.length > 0 && (
 
@@ -581,23 +819,29 @@ function App() {
                     </div>
 
                     <div>
-                      <strong>MISSING PPE DETECTED</strong>
+
+                      <strong>
+                        MISSING PPE DETECTED
+                      </strong>
 
                       <p>
+
                         {result.missing
-                          .map(
-                            (item) =>
-                              item.charAt(0).toUpperCase() +
-                              item.slice(1)
-                          )
+                          .map(formatPPEName)
                           .join(" • ")}
+
                       </p>
+
                     </div>
 
                   </div>
 
                 )}
 
+
+                {/* =================================================
+                    UNCERTAIN PPE ALERT
+                ================================================= */}
 
                 {result.uncertain?.length > 0 && (
 
@@ -608,17 +852,19 @@ function App() {
                     </div>
 
                     <div>
-                      <strong>LIMITED VISUAL EVIDENCE</strong>
+
+                      <strong>
+                        LIMITED VISUAL EVIDENCE
+                      </strong>
 
                       <p>
+
                         {result.uncertain
-                          .map(
-                            (item) =>
-                              item.charAt(0).toUpperCase() +
-                              item.slice(1)
-                          )
+                          .map(formatPPEName)
                           .join(" • ")}
+
                       </p>
+
                     </div>
 
                   </div>
@@ -626,11 +872,15 @@ function App() {
                 )}
 
 
-                {/* AI NOTE */}
+                {/* =================================================
+                    AI NOTE
+                ================================================= */}
 
                 <div className="ai-note">
 
-                  <span>AI NOTE</span>
+                  <span>
+                    AI NOTE
+                  </span>
 
                   <p>
                     Uncertain means the model did not
@@ -658,13 +908,23 @@ function App() {
       <footer>
 
         <div>
-          <strong>SITEGUARD AI</strong>
-          <span>CONSTRUCTION SAFETY INTELLIGENCE</span>
+
+          <strong>
+            SITEGUARD AI
+          </strong>
+
+          <span>
+            CONSTRUCTION SAFETY INTELLIGENCE
+          </span>
+
         </div>
 
         <div className="footer-status">
+
           <span className="live-dot"></span>
-          V2 MODEL ACTIVE
+
+          RT-DETR V2 MODEL ACTIVE
+
         </div>
 
       </footer>
