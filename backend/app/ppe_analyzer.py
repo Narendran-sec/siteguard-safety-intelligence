@@ -1,4 +1,6 @@
 from pathlib import Path
+
+import torch
 from ultralytics import YOLO
 
 
@@ -12,6 +14,18 @@ MODEL_PATH = BASE_DIR / "models" / "v2best.pt"
 
 CONFIDENCE_THRESHOLD = 0.30
 DECISION_MARGIN = 0.10
+
+# Render-friendly inference settings
+IMAGE_SIZE = 320
+MAX_DETECTIONS = 50
+
+
+# ============================================================
+# CPU CONFIGURATION
+# ============================================================
+
+# Keep CPU usage predictable on small cloud instances.
+torch.set_num_threads(1)
 
 
 # ============================================================
@@ -31,7 +45,10 @@ PPE_PAIRS = {
 # LOAD MODEL
 # ============================================================
 
+print("========================================")
 print("Loading V2 PPE model...")
+print(f"Model path: {MODEL_PATH}")
+print("========================================")
 
 if not MODEL_PATH.exists():
     raise FileNotFoundError(
@@ -45,6 +62,11 @@ print("Classes:")
 
 for class_id, class_name in model.names.items():
     print(f"{class_id} -> {class_name}")
+
+print("Inference device: CPU")
+print(f"Inference image size: {IMAGE_SIZE}")
+print(f"Confidence threshold: {CONFIDENCE_THRESHOLD}")
+print("========================================")
 
 
 # ============================================================
@@ -60,15 +82,32 @@ def analyze_ppe(image_path):
             f"Image not found: {image_path}"
         )
 
+    print("----------------------------------------")
+    print(f"Starting PPE analysis: {image_path.name}")
+    print("Starting YOLO inference...")
+    print("----------------------------------------")
+
     # ========================================================
     # RUN INFERENCE
     # ========================================================
 
     results = model.predict(
         source=str(image_path),
+
+        # Render-friendly settings
+        imgsz=IMAGE_SIZE,
+        device="cpu",
+        workers=0,
+
+        # Detection settings
         conf=CONFIDENCE_THRESHOLD,
+        max_det=MAX_DETECTIONS,
+
+        # Keep output quiet
         verbose=False
     )
+
+    print("YOLO inference completed successfully.")
 
     # ========================================================
     # SCORE STORAGE
@@ -99,7 +138,13 @@ def analyze_ppe(image_path):
 
             class_id = int(box.cls[0])
             confidence = float(box.conf[0])
+
             class_name = model.names[class_id]
+
+            print(
+                f"Detection: {class_name} "
+                f"(confidence={confidence:.3f})"
+            )
 
             # ------------------------------------------------
             # PERSON
@@ -148,17 +193,12 @@ def analyze_ppe(image_path):
 
         if positive >= CONFIDENCE_THRESHOLD:
 
-            # If both exist and negative is significantly
-            # stronger, treat PPE as missing.
             if (
                 negative >= CONFIDENCE_THRESHOLD
                 and negative > positive + DECISION_MARGIN
             ):
-
                 status = "missing"
-
             else:
-
                 status = "present"
 
         # ----------------------------------------------------
@@ -214,6 +254,10 @@ def analyze_ppe(image_path):
     else:
 
         overall_status = "compliant"
+
+    print("----------------------------------------")
+    print(f"Analysis complete: {overall_status}")
+    print("----------------------------------------")
 
     # ========================================================
     # RETURN RESULT
