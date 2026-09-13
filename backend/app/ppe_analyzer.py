@@ -3,6 +3,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 import onnxruntime as ort
+import requests
 
 
 # ============================================================
@@ -11,7 +12,15 @@ import onnxruntime as ort
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-MODEL_PATH = BASE_DIR / "models" / "v2best.onnx"
+MODEL_DIR = BASE_DIR / "models"
+MODEL_PATH = MODEL_DIR / "v2best.onnx"
+
+# Public Hugging Face model
+MODEL_URL = (
+    "https://huggingface.co/"
+    "NarendranKumar/siteguard-rtdetr/"
+    "resolve/main/v2best.onnx"
+)
 
 IMAGE_SIZE = 320
 CONFIDENCE_THRESHOLD = 0.30
@@ -52,6 +61,110 @@ PPE_PAIRS = {
 
 
 # ============================================================
+# DOWNLOAD MODEL IF NEEDED
+# ============================================================
+
+def ensure_model():
+
+    if MODEL_PATH.exists():
+
+        print("========================================")
+        print("RT-DETR ONNX model already exists.")
+        print(f"Model path: {MODEL_PATH}")
+        print("========================================")
+
+        return
+
+    print("========================================")
+    print("RT-DETR ONNX model not found locally.")
+    print("Downloading model from Hugging Face...")
+    print(f"URL: {MODEL_URL}")
+    print("========================================")
+
+    MODEL_DIR.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    # Temporary file prevents a partially downloaded model
+    # from being used if the download fails.
+    temp_path = MODEL_DIR / "v2best.onnx.download"
+
+    try:
+
+        with requests.get(
+            MODEL_URL,
+            stream=True,
+            timeout=600
+        ) as response:
+
+            response.raise_for_status()
+
+            total_size = int(
+                response.headers.get(
+                    "content-length",
+                    0
+                )
+            )
+
+            downloaded = 0
+
+            with open(
+                temp_path,
+                "wb"
+            ) as file:
+
+                for chunk in response.iter_content(
+                    chunk_size=1024 * 1024
+                ):
+
+                    if not chunk:
+                        continue
+
+                    file.write(chunk)
+
+                    downloaded += len(chunk)
+
+                    if total_size:
+
+                        percent = (
+                            downloaded /
+                            total_size
+                        ) * 100
+
+                        print(
+                            f"\rDownloading: "
+                            f"{percent:.1f}% "
+                            f"({downloaded / 1024 / 1024:.1f} MB / "
+                            f"{total_size / 1024 / 1024:.1f} MB)",
+                            end=""
+                        )
+
+        print()
+
+        temp_path.replace(
+            MODEL_PATH
+        )
+
+        print("RT-DETR ONNX model downloaded successfully.")
+        print(f"Saved to: {MODEL_PATH}")
+
+    except Exception:
+
+        if temp_path.exists():
+            temp_path.unlink()
+
+        raise
+
+
+# ============================================================
+# ENSURE MODEL
+# ============================================================
+
+ensure_model()
+
+
+# ============================================================
 # LOAD ONNX MODEL
 # ============================================================
 
@@ -59,11 +172,6 @@ print("========================================")
 print("Loading RT-DETR ONNX model...")
 print(f"Model path: {MODEL_PATH}")
 print("========================================")
-
-if not MODEL_PATH.exists():
-    raise FileNotFoundError(
-        f"ONNX model not found at: {MODEL_PATH}"
-    )
 
 
 # Keep ONNX Runtime memory usage controlled.
@@ -80,7 +188,9 @@ session_options.graph_optimization_level = (
 session = ort.InferenceSession(
     str(MODEL_PATH),
     sess_options=session_options,
-    providers=["CPUExecutionProvider"]
+    providers=[
+        "CPUExecutionProvider"
+    ]
 )
 
 
@@ -90,12 +200,21 @@ OUTPUT_NAME = session.get_outputs()[0].name
 
 print("RT-DETR ONNX model loaded successfully.")
 print(f"Input name: {INPUT_NAME}")
-print(f"Input shape: {session.get_inputs()[0].shape}")
+print(
+    f"Input shape: "
+    f"{session.get_inputs()[0].shape}"
+)
 print(f"Output name: {OUTPUT_NAME}")
-print(f"Output shape: {session.get_outputs()[0].shape}")
+print(
+    f"Output shape: "
+    f"{session.get_outputs()[0].shape}"
+)
 print("Inference device: CPU")
 print(f"Image size: {IMAGE_SIZE}")
-print(f"Confidence threshold: {CONFIDENCE_THRESHOLD}")
+print(
+    f"Confidence threshold: "
+    f"{CONFIDENCE_THRESHOLD}"
+)
 print("========================================")
 
 
@@ -105,9 +224,12 @@ print("========================================")
 
 def preprocess_image(image_path: Path):
 
-    image = cv2.imread(str(image_path))
+    image = cv2.imread(
+        str(image_path)
+    )
 
     if image is None:
+
         raise ValueError(
             f"Could not read image: {image_path}"
         )
@@ -121,13 +243,18 @@ def preprocess_image(image_path: Path):
 
     image = cv2.resize(
         image,
-        (IMAGE_SIZE, IMAGE_SIZE),
+        (
+            IMAGE_SIZE,
+            IMAGE_SIZE
+        ),
         interpolation=cv2.INTER_LINEAR
     )
 
-    image = image.astype(
-        np.float32
-    ) / 255.0
+    image = (
+        image.astype(
+            np.float32
+        ) / 255.0
+    )
 
     # HWC -> CHW
     image = np.transpose(
@@ -141,7 +268,9 @@ def preprocess_image(image_path: Path):
         axis=0
     )
 
-    return np.ascontiguousarray(image)
+    return np.ascontiguousarray(
+        image
+    )
 
 
 # ============================================================
@@ -150,16 +279,24 @@ def preprocess_image(image_path: Path):
 
 def analyze_ppe(image_path):
 
-    image_path = Path(image_path)
+    image_path = Path(
+        image_path
+    )
 
     if not image_path.exists():
+
         raise FileNotFoundError(
             f"Image not found: {image_path}"
         )
 
     print("----------------------------------------")
-    print(f"Starting PPE analysis: {image_path.name}")
-    print("Starting RT-DETR ONNX inference...")
+    print(
+        f"Starting PPE analysis: "
+        f"{image_path.name}"
+    )
+    print(
+        "Starting RT-DETR ONNX inference..."
+    )
     print("----------------------------------------")
 
     # ========================================================
@@ -275,7 +412,8 @@ def analyze_ppe(image_path):
                 )
 
     print(
-        f"Usable detections: {detection_count}"
+        f"Usable detections: "
+        f"{detection_count}"
     )
 
     # ========================================================
@@ -289,31 +427,24 @@ def analyze_ppe(image_path):
         positive = positive_scores[ppe]
         negative = negative_scores[ppe]
 
-        # ----------------------------------------------------
-        # Positive detection
-        # ----------------------------------------------------
-
         if positive >= CONFIDENCE_THRESHOLD:
 
             if (
                 negative >= CONFIDENCE_THRESHOLD
-                and negative > positive + DECISION_MARGIN
+                and
+                negative >
+                positive + DECISION_MARGIN
             ):
-                status = "missing"
-            else:
-                status = "present"
 
-        # ----------------------------------------------------
-        # Negative detection
-        # ----------------------------------------------------
+                status = "missing"
+
+            else:
+
+                status = "present"
 
         elif negative >= CONFIDENCE_THRESHOLD:
 
             status = "missing"
-
-        # ----------------------------------------------------
-        # No reliable evidence
-        # ----------------------------------------------------
 
         else:
 
@@ -365,7 +496,8 @@ def analyze_ppe(image_path):
 
     print("----------------------------------------")
     print(
-        f"Analysis complete: {overall_status}"
+        f"Analysis complete: "
+        f"{overall_status}"
     )
     print("----------------------------------------")
 
